@@ -1,81 +1,66 @@
-name: AnyDesk Official CLI Setup
+name: Setup XFCE Runner + Tailscale + VNC
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  run-anydesk:
-    runs-on: windows-2022
+  setup-gui-runner:
+    runs-on: ubuntu-latest
+    env:
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      USERNAME: runner
+      PASSWORD: runner
+      TAILSCALE_HOSTNAME: gh-xfce-vnc-${{ github.run_id }}
+
     steps:
-      - name: 1. Install & Connect Tailscale
-        shell: powershell
+      - uses: actions/checkout@v4
+
+      - name: Ensure runner user has sudo
         run: |
-          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.92.3-amd64.msi"
-          $installerPath = "$env:TEMP\tailscale.msi"
-          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
-          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTHKEY }} --hostname=gh-runner-${{ github.run_id }}
-          $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-          "TAILSCALE_IP=$tsIP" | Out-File -Append $env:GITHUB_ENV
+          echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
+          echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
 
-      - name: 3. Official AnyDesk Installation & Logic
-        shell: cmd
+      - name: Install XFCE + VNC server
         run: |
-          echo [INFO] Downloading Official AnyDesk.exe...
-          powershell -Command "Invoke-WebRequest -Uri 'https://download.anydesk.com/AnyDesk.exe' -OutFile 'AnyDesk.exe'"
-          
-          echo [INFO] Installing AnyDesk Silently...
-          AnyDesk.exe --install "C:\AnyDesk" --start-with-win --silent
-          
-          echo [INFO] Waiting 20s for installation...
-          powershell -Command "Start-Sleep -Seconds 20"
-          
-          set "adPath=C:\AnyDesk\AnyDesk.exe"
+          echo ">>> Installing XFCE Desktop + VNC..."
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            xfce4 xfce4-terminal dbus-x11 xorg \
+            tigervnc-standalone-server tigervnc-common tigervnc-tools
 
-          if not exist "%adPath%" (
-              echo [ERROR] AnyDesk was not found!
-              exit 1
-          )
+          # Configure VNC password for the runner
+          mkdir -p /home/${USERNAME}/.vnc
+          echo ${PASSWORD} | vncpasswd -f > /home/${USERNAME}/.vnc/passwd
+          chmod 600 /home/${USERNAME}/.vnc/passwd
+          chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}/.vnc
 
-          :START_ANYDESK
-          echo [INFO] Starting AnyDesk service in background...
-          start "" "%adPath%" --start
-          powershell -Command "Start-Sleep -Seconds 10"
+          # Start XFCE when VNC launches
+          echo "startxfce4" > /home/${USERNAME}/.xsession
+          chown ${USERNAME}:${USERNAME} /home/${USERNAME}/.xsession
 
-          echo [INFO] Attempting to fetch AnyDesk ID...
-          for /f "delims=" %%i in ('"%adPath%" --get-id') do (
-              set "ID=%%i"
-          )
-
-          if "%ID%"=="" (
-              echo [WARNING] ID is empty, retrying...
-              taskkill /f /im anydesk.exe > nul 2>&1
-              goto START_ANYDESK
-          )
-          if "%ID%"=="0" (
-              echo [WARNING] ID is 0, retrying...
-              taskkill /f /im anydesk.exe > nul 2>&1
-              goto START_ANYDESK
-          )
-          
-          echo [SUCCESS] Valid ID found: %ID%
-          echo [INFO] Setting password for Full Access...
-          echo MR.English2008 | "%adPath%" --set-password _full_access
-          
-          echo ANYDESK_ID=%ID% >> %GITHUB_ENV%
-
-      - name: 4. Final Status & Keep Alive
-        shell: powershell
+      - name: Install Tailscale
         run: |
-          $endTime = (Get-Date).AddHours(6)
-          Write-Host "========================================"
-          Write-Host "ANYDESK READY"
-          Write-Host "ID: $env:ANYDESK_ID"
-          Write-Host "User: runneradmin"
-          Write-Host "Password: MR.English2008"
-          Write-Host "========================================"
-          
-          while ((Get-Date) -lt $endTime) {
-              Write-Host "Online | ID: $env:ANYDESK_ID | $(Get-Date)"
-              Start-Sleep -Seconds 300
-          }
+          echo ">>> Installing Tailscale..."
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+
+      - name: Start VNC + Show Tailscale Info
+        run: |
+          echo ">>> Starting VNC server..."
+          # Run VNC on all interfaces (not only localhost)
+          sudo -u ${USERNAME} vncserver :1 -geometry 1280x800 -depth 24 -localhost no
+
+          # Get Tailscale IP
+          TAILSCALE_IP=$(tailscale ip -4 | head -n1)
+
+          echo "=== CONNECTION INFO ==="
+          echo "USERNAME: ${USERNAME}"
+          echo "PASSWORD: ${PASSWORD}"
+          echo "Connect with any VNC client to:"
+          echo "    ${TAILSCALE_IP}:5901"
+          echo
+          echo ">>> Keeping runner alive..."
+          tail -f /dev/null

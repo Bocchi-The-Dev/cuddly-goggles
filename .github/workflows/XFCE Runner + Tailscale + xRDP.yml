@@ -1,0 +1,62 @@
+name: Setup XFCE Runner + Tailscale
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup-gui-runner:
+    runs-on: ubuntu-latest
+    env:
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      USERNAME: runner
+      PASSWORD: runner
+      TAILSCALE_HOSTNAME: gh-xfce-${{ github.run_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure runner user has sudo
+        run: |
+          echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
+          echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
+
+      - name: Install XFCE + xrdp
+        run: |
+          echo ">>> Installing lightweight XFCE Desktop..."
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xfce4 xfce4-goodies xorg dbus-x11 xrdp
+
+          # set up xfce user
+          echo "startxfce4" | sudo tee /home/${USERNAME}/.xsession
+          sudo chown ${USERNAME}:${USERNAME} /home/${USERNAME}/.xsession
+
+          # make xrdb use xfce
+          echo "exec startxfce4" | sudo tee /etc/skel/.xsession
+          echo "startxfce4" | sudo tee /etc/skel/.xinitrc
+
+          sudo systemctl enable --now xrdp
+          sudo systemctl restart xrdp
+
+      - name: Install Tailscale
+        run: |
+          echo ">>> Installing Tailscale..."
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+          sudo tailscale ip -4
+
+      - name: Connection Info + Keep Alive
+        run: |
+          echo "=== FINAL CONNECTION INFO ==="
+          echo "USERNAME: ${USERNAME}"
+          echo "PASSWORD: ${PASSWORD}"
+          echo "Tailscale IPs:"
+          sudo tailscale ip -4 || true
+          echo
+          echo ">>> Connect with any RDP client using the IP above (port 3389)."
+          echo ">>> Keeping runner alive..."
+          while true; do
+            sleep 600
+          done

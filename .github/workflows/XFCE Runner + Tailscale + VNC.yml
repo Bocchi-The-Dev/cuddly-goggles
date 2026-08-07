@@ -1,0 +1,66 @@
+name: Setup XFCE Runner + Tailscale + VNC
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup-gui-runner:
+    runs-on: ubuntu-latest
+    env:
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      USERNAME: runner
+      PASSWORD: runner
+      TAILSCALE_HOSTNAME: gh-xfce-vnc-${{ github.run_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure runner user has sudo
+        run: |
+          echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
+          echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
+
+      - name: Install XFCE + VNC server
+        run: |
+          echo ">>> Installing XFCE Desktop + VNC..."
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            xfce4 xfce4-terminal dbus-x11 xorg \
+            tigervnc-standalone-server tigervnc-common tigervnc-tools
+
+          # Configure VNC password for the runner
+          mkdir -p /home/${USERNAME}/.vnc
+          echo ${PASSWORD} | vncpasswd -f > /home/${USERNAME}/.vnc/passwd
+          chmod 600 /home/${USERNAME}/.vnc/passwd
+          chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}/.vnc
+
+          # Start XFCE when VNC launches
+          echo "startxfce4" > /home/${USERNAME}/.xsession
+          chown ${USERNAME}:${USERNAME} /home/${USERNAME}/.xsession
+
+      - name: Install Tailscale
+        run: |
+          echo ">>> Installing Tailscale..."
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+
+      - name: Start VNC + Show Tailscale Info
+        run: |
+          echo ">>> Starting VNC server..."
+          # Run VNC on all interfaces (not only localhost)
+          sudo -u ${USERNAME} vncserver :1 -geometry 1280x800 -depth 24 -localhost no
+
+          # Get Tailscale IP
+          TAILSCALE_IP=$(tailscale ip -4 | head -n1)
+
+          echo "=== CONNECTION INFO ==="
+          echo "USERNAME: ${USERNAME}"
+          echo "PASSWORD: ${PASSWORD}"
+          echo "Connect with any VNC client to:"
+          echo "    ${TAILSCALE_IP}:5901"
+          echo
+          echo ">>> Keeping runner alive..."
+          tail -f /dev/null

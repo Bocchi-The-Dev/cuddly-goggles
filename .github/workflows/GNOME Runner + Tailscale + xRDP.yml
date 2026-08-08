@@ -1,0 +1,59 @@
+name: Setup GNOME Runner + Tailscale + xRDP
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup-gui-runner:
+    runs-on: ubuntu-latest
+    env:
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      USERNAME: runner
+      PASSWORD: runner
+      TAILSCALE_HOSTNAME: gh-gnome-xrdp-${{ github.run_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure runner user has sudo
+        run: |
+          echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
+          echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
+
+      - name: Install GNOME + xRDP
+        run: |
+          echo ">>> Installing GNOME Desktop + xRDP..."
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            gnome-session gnome-terminal nautilus xorg dbus-x11 \
+            xrdp
+
+          # Enable xRDP service
+          sudo systemctl enable xrdp
+          sudo systemctl start xrdp
+
+          # Add user to ssl-cert group (required by xRDP)
+          sudo adduser ${USERNAME} ssl-cert
+
+      - name: Install Tailscale
+        run: |
+          echo ">>> Installing Tailscale..."
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+
+      - name: Show xRDP + Tailscale info
+        run: |
+          # Get Tailscale IP
+          TAILSCALE_IP=$(tailscale ip -4 | head -n1)
+
+          echo "=== RDP CONNECTION INFO ==="
+          echo "USERNAME: ${USERNAME}"
+          echo "PASSWORD: ${PASSWORD}"
+          echo "Connect with any RDP client to:"
+          echo "    ${TAILSCALE_IP}"
+          echo
+          echo ">>> Keeping runner alive..."
+          tail -f /dev/null

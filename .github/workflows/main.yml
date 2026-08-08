@@ -1,4 +1,4 @@
-name: Setup SSH Runner + Tailscale
+name: Setup Code-server Runner + Tailscale
 
 on:
   workflow_dispatch:
@@ -31,19 +31,20 @@ jobs:
           sudo systemctl enable ssh
           sudo systemctl restart ssh
 
-      - name: Setup Code-server
-        run: |
-          echo ">>> Installing code-server..."
-          curl -fsSL https://code-server.dev/install.sh | sh
-          sudo code-server
-          sudo mkdir -p /home/${USERNAME}/.config/code-server
-          echo "bind-addr: 0.0.0.0:8080" > /home/${USERNAME}/.config/code-server/config.yaml
-
       - name: Install Tailscale
         run: |
           echo ">>> Installing Tailscale..."
           curl -fsSL https://tailscale.com/install.sh | sudo sh
           sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+
+      - name: Setup Code-server
+        run: |
+          echo ">>> Installing code-server..."
+          curl -fsSL https://code-server.dev/install.sh | sh
+          sudo code-server@$USERNAME
+          sudo mkdir -p /home/${USERNAME}/.config/code-server
+          echo "bind-addr: 0.0.0.0:8080" > /home/${USERNAME}/.config/code-server/config.yaml
+          cat /home/${USERNAME}/.config/code-server/config.yaml
 
       - name: Show SSH Connection Info
         run: |

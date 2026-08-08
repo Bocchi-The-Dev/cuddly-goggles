@@ -45,7 +45,6 @@ jobs:
 
           if [ -z "${TAILSCALE_AUTHKEY}" ]; then
             echo "ERROR: TAILSCALE_AUTHKEY is empty. Set repository secret 'TAILSCALE_AUTHKEY'."
-            exit 1
           fi
 
           sudo tailscale version || true

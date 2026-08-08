@@ -36,8 +36,12 @@ jobs:
           echo ">>> Installing Tailscale..."
           curl -fsSL https://tailscale.com/install.sh | sudo sh
 
-          # Ensure daemon is running (try systemd, fallback to background)
-          sudo systemctl enable --now tailscaled || (sudo tailscaled &>/dev/null &)
+          # Try to start tailscaled with systemd; if that fails, start in background
+          if ! sudo systemctl enable --now tailscaled; then
+            echo "systemd start failed; launching tailscaled in background..."
+            sudo tailscaled &>/dev/null &
+            sleep 1
+          fi
 
           if [ -z "${TAILSCALE_AUTHKEY}" ]; then
             echo "ERROR: TAILSCALE_AUTHKEY is empty. Set repository secret 'TAILSCALE_AUTHKEY'."
@@ -45,13 +49,13 @@ jobs:
           fi
 
           sudo tailscale version || true
-          echo ">>> Bringing up tailscale (using userspace networking as fallback)..."
-          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}" --tun=userspace-networking || {
+          echo ">>> Bringing up tailscale (fallback to userspace networking)..."
+          if ! sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}" --tun=userspace-networking; then
             echo "tailscale up failed — dumping diagnostics..."
             sudo tailscale status || true
             sudo journalctl -u tailscaled --no-pager -n 200 || true
             exit 1
-          }
+          fi
           echo "Tailscale IPs:"
           sudo tailscale ip -4 || true
 
@@ -60,14 +64,13 @@ jobs:
           echo ">>> Installing code-server..."
           curl -fsSL https://code-server.dev/install.sh | sh
 
-          # create config BEFORE starting; set password and bind address
+          # create config BEFORE starting; set password and bind address (avoid heredoc to prevent YAML indentation issues)
           sudo mkdir -p /home/${USERNAME}/.config/code-server
-          sudo tee /home/${USERNAME}/.config/code-server/config.yaml > /dev/null <<EOF
-bind-addr: 0.0.0.0:8080
-auth: password
-password: ${PASSWORD}
-cert: false
-EOF
+          echo "bind-addr: 0.0.0.0:8080" | sudo tee /home/${USERNAME}/.config/code-server/config.yaml >/dev/null
+          echo "auth: password" | sudo tee -a /home/${USERNAME}/.config/code-server/config.yaml >/dev/null
+          echo "password: ${PASSWORD}" | sudo tee -a /home/${USERNAME}/.config/code-server/config.yaml >/dev/null
+          echo "cert: false" | sudo tee -a /home/${USERNAME}/.config/code-server/config.yaml >/dev/null
+
           sudo chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}/.config/code-server
           echo "code-server config:"
           sudo sed -n '1,200p' /home/${USERNAME}/.config/code-server/config.yaml

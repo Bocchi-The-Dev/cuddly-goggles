@@ -31,31 +31,66 @@ jobs:
           sudo systemctl enable ssh
           sudo systemctl restart ssh
 
-      - name: Install Tailscale
+      - name: Install & start Tailscale (with diagnostics)
         run: |
           echo ">>> Installing Tailscale..."
           curl -fsSL https://tailscale.com/install.sh | sudo sh
-          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
 
-      - name: Setup Code-server
+          # Ensure daemon is running (try systemd, fallback to background)
+          sudo systemctl enable --now tailscaled || (sudo tailscaled &>/dev/null &)
+
+          if [ -z "${TAILSCALE_AUTHKEY}" ]; then
+            echo "ERROR: TAILSCALE_AUTHKEY is empty. Set repository secret 'TAILSCALE_AUTHKEY'."
+            exit 1
+          fi
+
+          sudo tailscale version || true
+          echo ">>> Bringing up tailscale (using userspace networking as fallback)..."
+          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}" --tun=userspace-networking || {
+            echo "tailscale up failed — dumping diagnostics..."
+            sudo tailscale status || true
+            sudo journalctl -u tailscaled --no-pager -n 200 || true
+            exit 1
+          }
+          echo "Tailscale IPs:"
+          sudo tailscale ip -4 || true
+
+      - name: Setup Code-server (create config, start in background)
         run: |
           echo ">>> Installing code-server..."
           curl -fsSL https://code-server.dev/install.sh | sh
-          sudo code-server
-          sudo mkdir -p /home/${USERNAME}/.config/code-server
-          echo "bind-addr: 0.0.0.0:8080" > /home/${USERNAME}/.config/code-server/config.yaml
-          cat /home/${USERNAME}/.config/code-server/config.yaml
 
-      - name: Show SSH Connection Info
+          # create config BEFORE starting; set password and bind address
+          sudo mkdir -p /home/${USERNAME}/.config/code-server
+          sudo tee /home/${USERNAME}/.config/code-server/config.yaml > /dev/null <<EOF
+bind-addr: 0.0.0.0:8080
+auth: password
+password: ${PASSWORD}
+cert: false
+EOF
+          sudo chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}/.config/code-server
+          echo "code-server config:"
+          sudo sed -n '1,200p' /home/${USERNAME}/.config/code-server/config.yaml
+
+          # start code-server as the non-root user in background so the step doesn't block
+          sudo -u ${USERNAME} nohup code-server --config /home/${USERNAME}/.config/code-server/config.yaml > /tmp/code-server.log 2>&1 &
+          sleep 2
+          echo "code-server log (tail):"
+          tail -n +1 /tmp/code-server.log || true
+
+      - name: Show SSH Connection Info and keep runner alive
         run: |
-          TAILSCALE_IP=$(tailscale ip -4 | head -n1)
-          echo "=== SSH CONNECTION INFO ==="
-          echo "IP: ${TAILSCALE_IP}"
+          TAILSCALE_IP=$(sudo tailscale ip -4 | head -n1 || true)
+          echo "=== SSH/Code-server CONNECTION INFO ==="
+          echo "TAILSCALE IP: ${TAILSCALE_IP:-<no-ip-yet>}"
           echo "USERNAME: ${USERNAME}"
           echo "PASSWORD: ${PASSWORD}"
           echo
-          echo ">>> Connect with:"
+          echo ">>> SSH:"
           echo "    ssh -o StrictHostKeyChecking=no ${USERNAME}@${TAILSCALE_IP}"
+          echo
+          echo ">>> Code-server (HTTP):"
+          echo "    http://${TAILSCALE_IP}:8080/"
           echo
           echo ">>> Keeping runner alive..."
           tail -f /dev/null

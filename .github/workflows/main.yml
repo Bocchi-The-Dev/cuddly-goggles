@@ -35,9 +35,21 @@ jobs:
         run: |
           echo ">>> Installing code-server..."
           curl -fsSL https://code-server.dev/install.sh | sh
-          sudo code-server
           sudo mkdir -p /home/${USERNAME}/.config/code-server
-          echo "bind-addr: 0.0.0.0:8080" > /home/${USERNAME}/.config/code-server/config.yaml
+          cat <<EOF > /home/${USERNAME}/.config/code-server/config.yaml
+          bind-addr: 0.0.0.0:8080
+          auth: none
+          cert: false
+          EOF
+          cat /home/${USERNAME}/.config/code-server/config.yaml
+
+          echo ">>> Starting code-server in background..."
+          nohup code-server > /tmp/code-server.log 2>&1 &
+          disown
+
+          sleep 3
+          echo ">>> code-server log so far:"
+          cat /tmp/code-server.log
 
       - name: Install Tailscale
         run: |

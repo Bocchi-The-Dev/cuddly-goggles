@@ -36,7 +36,7 @@ jobs:
           echo ">>> Installing code-server..."
           curl -fsSL https://code-server.dev/install.sh | sh
           sudo mkdir -p /home/${USERNAME}/.config/code-server
-          cat <<EOF > /home/${USERNAME}/.config/code-server/config.yaml
+          sudo cat <<EOF > /home/${USERNAME}/.config/code-server/config.yaml
           bind-addr: 0.0.0.0:8080
           auth: none
           cert: false

@@ -1,4 +1,4 @@
-name: Setup Code-server Runner + Tailscale
+name: Setup SSH Runner + Tailscale
 
 on:
   workflow_dispatch:
@@ -31,68 +31,30 @@ jobs:
           sudo systemctl enable ssh
           sudo systemctl restart ssh
 
-      - name: Install & start Tailscale (with diagnostics)
-        run: |
-          echo ">>> Installing Tailscale..."
-          curl -fsSL https://tailscale.com/install.sh | sudo sh
-
-          # Try to start tailscaled with systemd; if that fails, start in background
-          if ! sudo systemctl enable --now tailscaled; then
-            echo "systemd start failed; launching tailscaled in background..."
-            sudo tailscaled &>/dev/null &
-            sleep 1
-          fi
-
-          if [ -z "${TAILSCALE_AUTHKEY}" ]; then
-            echo "ERROR: TAILSCALE_AUTHKEY is empty. Set repository secret 'TAILSCALE_AUTHKEY'."
-          fi
-
-          sudo tailscale version || true
-          echo ">>> Bringing up tailscale (fallback to userspace networking)..."
-          if ! sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}" --tun=userspace-networking; then
-            echo "tailscale up failed — dumping diagnostics..."
-            sudo tailscale status || true
-            sudo journalctl -u tailscaled --no-pager -n 200 || true
-            exit 1
-          fi
-          echo "Tailscale IPs:"
-          sudo tailscale ip -4 || true
-
-      - name: Setup Code-server (create config, start in background)
+      - name: Setup Code-server
         run: |
           echo ">>> Installing code-server..."
           curl -fsSL https://code-server.dev/install.sh | sh
-
-          # create config BEFORE starting; set password and bind address (avoid heredoc to prevent YAML indentation issues)
+          sudo code-server
           sudo mkdir -p /home/${USERNAME}/.config/code-server
-          echo "bind-addr: 0.0.0.0:8080" | sudo tee /home/${USERNAME}/.config/code-server/config.yaml >/dev/null
-          echo "auth: password" | sudo tee -a /home/${USERNAME}/.config/code-server/config.yaml >/dev/null
-          echo "password: ${PASSWORD}" | sudo tee -a /home/${USERNAME}/.config/code-server/config.yaml >/dev/null
-          echo "cert: false" | sudo tee -a /home/${USERNAME}/.config/code-server/config.yaml >/dev/null
+          echo "bind-addr: 0.0.0.0:8080" > /home/${USERNAME}/.config/code-server/config.yaml
 
-          sudo chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}/.config/code-server
-          echo "code-server config:"
-          sudo sed -n '1,200p' /home/${USERNAME}/.config/code-server/config.yaml
-
-          # start code-server as the non-root user in background so the step doesn't block
-          sudo -u ${USERNAME} nohup code-server --config /home/${USERNAME}/.config/code-server/config.yaml > /tmp/code-server.log 2>&1 &
-          sleep 2
-          echo "code-server log (tail):"
-          tail -n +1 /tmp/code-server.log || true
-
-      - name: Show SSH Connection Info and keep runner alive
+      - name: Install Tailscale
         run: |
-          TAILSCALE_IP=$(sudo tailscale ip -4 | head -n1 || true)
-          echo "=== SSH/Code-server CONNECTION INFO ==="
-          echo "TAILSCALE IP: ${TAILSCALE_IP:-<no-ip-yet>}"
+          echo ">>> Installing Tailscale..."
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+
+      - name: Show SSH Connection Info
+        run: |
+          TAILSCALE_IP=$(tailscale ip -4 | head -n1)
+          echo "=== SSH CONNECTION INFO ==="
+          echo "IP: ${TAILSCALE_IP}"
           echo "USERNAME: ${USERNAME}"
           echo "PASSWORD: ${PASSWORD}"
           echo
-          echo ">>> SSH:"
+          echo ">>> Connect with:"
           echo "    ssh -o StrictHostKeyChecking=no ${USERNAME}@${TAILSCALE_IP}"
-          echo
-          echo ">>> Code-server (HTTP):"
-          echo "    http://${TAILSCALE_IP}:8080/"
           echo
           echo ">>> Keeping runner alive..."
           tail -f /dev/null

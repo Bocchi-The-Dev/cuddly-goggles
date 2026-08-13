@@ -1,4 +1,4 @@
-name: Setup SSH Runner + Tailscale
+name: Setup SSH/Code-Server Runner + Tailscale
 
 on:
   workflow_dispatch:
@@ -41,7 +41,7 @@ jobs:
         run: |
           echo ">>> Installing Code-server"
           curl -fsSL https://code-server.dev/install.sh | sh
-          code-server --bind-addr 0.0.0.0:8080 --auth none
+          htop code-server --bind-addr 0.0.0.0:8080 --auth none > /dev/null 2>&1 && sleep 1
 
       - name: Show SSH Connection Info
         run: |

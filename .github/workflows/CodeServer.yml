@@ -1,0 +1,66 @@
+name: Code Server
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup-ssh-runner:
+    runs-on: ubuntu-latest
+    env:
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      USERNAME: runner
+      PASSWORD: runner
+      TAILSCALE_HOSTNAME: gh-ssh-${{ github.run_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure runner user has sudo + password
+        run: |
+          echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
+          echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
+
+      - name: Install OpenSSH server
+        run: |
+          echo ">>> Installing OpenSSH..."
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server
+          sudo systemctl enable ssh
+          sudo systemctl restart ssh
+
+      - name: Install Tailscale
+        run: |
+          echo ">>> Installing Tailscale..."
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+
+      - name: Install code-server and Show Info
+        run: |
+          echo ">>> Installing Code-server"
+          curl -fsSL https://code-server.dev/install.sh | sh
+          
+          # Start code-server in the background (&) so it doesn't block the script
+          echo ">>> Starting Code-server"
+          code-server --bind-addr 0.0.0.0:8080 --auth none &
+          
+          # Small sleep to ensure code-server starts before printing info (optional but good practice)
+          sleep 2
+          
+          # Fetch IP and print connection info
+          TAILSCALE_IP=$(tailscale ip -4 | head -n1)
+          echo "=== SSH CONNECTION INFO ==="
+          echo "IP: ${TAILSCALE_IP}"
+          echo "USERNAME: ${USERNAME}"
+          echo "PASSWORD: ${PASSWORD}"
+          echo
+          echo ">>> Connect with:"
+          echo "    ssh -o StrictHostKeyChecking=no ${USERNAME}@${TAILSCALE_IP}"
+          echo
+          echo ">>> Code-server is accessible at:"
+          echo "    http://${TAILSCALE_IP}:8080"
+          echo
+          echo ">>> Keeping runner alive..."
+          tail -f /dev/null

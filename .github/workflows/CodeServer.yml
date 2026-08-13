@@ -14,6 +14,8 @@ jobs:
       USERNAME: runner
       PASSWORD: runner
       TAILSCALE_HOSTNAME: gh-ssh-${{ github.run_id }}
+      USER: ${{ secrets.USER_NAME }}
+      EMAIL: ${{ secrets.USER_EMAIL }}
 
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +38,11 @@ jobs:
           echo ">>> Installing Tailscale..."
           curl -fsSL https://tailscale.com/install.sh | sudo sh
           sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+
+      - name: Configure git
+        run: |
+          git config --global user.name "$USER"
+          git config --global user.email "$EMAIL"
 
       - name: Install code-server and Show Info
         run: |

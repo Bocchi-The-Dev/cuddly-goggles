@@ -39,6 +39,9 @@ jobs:
 
       - name: Install code-server
         run: |
+          TAILSCALE_IP=$(tailscale ip -4 | head -n1)
+          echo "IP: ${TAILSCALE_IP}"
           echo ">>> Installing Code-server"
           curl -fsSL https://code-server.dev/install.sh | sh
           code-server --bind-addr 0.0.0.0:8080 --auth none
+

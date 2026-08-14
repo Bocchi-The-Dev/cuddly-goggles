@@ -53,16 +53,25 @@ jobs:
           sudo apt-get install -f -y
           sunshine --creds your_username your_password
 
-          # uinput perms so Sunshine can inject mouse/keyboard
           echo 'KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"' | \
-            sudo tee /etc/udev/rules.d/60-sunshine.rules
+          sudo tee /etc/udev/rules.d/60-sunshine.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger
 
-          # run Sunshine pointed at the virtual display, not via systemd --user
+          echo "=== confirming Xvfb/XFCE are still alive ==="
+          pgrep -af Xvfb || echo "Xvfb is NOT running!"
+          pgrep -af xfce4-session || echo "xfce4-session is NOT running!"
+
           DISPLAY=:1 nohup sunshine > sunshine.log 2>&1 &
-          sleep 3
-          curl -k https://localhost:47990 -o /dev/null -s -w "web UI status: %{http_code}\n"
+          echo "Sunshine PID: $!"
+          sleep 5
+
+          echo "=== is sunshine still alive? ==="
+          pgrep -af sunshine || echo "sunshine process died!"
+          echo "=== listening ports ==="
+          sudo ss -tlnp | grep 47990 || echo "nothing bound to 47990"
+          echo "=== sunshine.log ==="
+          cat sunshine.log
           while true; do
             sleep 600
           done

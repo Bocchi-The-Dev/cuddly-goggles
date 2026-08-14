@@ -30,7 +30,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            xfce4 xfce4-goodies xorg dbus-x11 xvfb x11-xserver-utils
+            xfce4 xfce4-goodies xorg dbus-x11 xvfb x11-xserver-utils miniupnpc
 
       - name: Start virtual display + XFCE session
         run: |

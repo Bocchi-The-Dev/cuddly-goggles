@@ -1,0 +1,75 @@
+name: Setup XFCE Runner + Sunshine + Tailscale
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup-gui-runner:
+    runs-on: ubuntu-latest
+    env:
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      USERNAME: runner
+      PASSWORD: runner
+      TAILSCALE_HOSTNAME: gh-xfce-${{ github.run_id }}
+      DISPLAY: ":1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure runner user has sudo + lingering session
+        run: |
+          echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
+          echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
+          # needed so `systemctl --user` works at all with no real login
+          sudo loginctl enable-linger ${USERNAME}
+
+      - name: Install XFCE + virtual display
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            xfce4 xfce4-goodies xorg dbus-x11 xvfb x11-xserver-utils
+
+      - name: Start virtual display + XFCE session
+        run: |
+          # fake a screen: Xvfb owns :1, at a normal desktop resolution
+          Xvfb :1 -screen 0 1920x1080x24 &
+          sleep 2
+          DISPLAY=:1 startxfce4 &
+          sleep 3
+
+      - name: Install Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+          sudo tailscale ip -4
+
+      - name: Setup Sunshine
+        run: |
+          curl -fsSL -o sunshine.deb https://github.com/LizardByte/Sunshine/releases/download/v2026.516.143833/sunshine-ubuntu-24.04-amd64.deb
+          sudo dpkg -i sunshine.deb
+          sudo apt-get install -f -y
+          sunshine --creds your_username your_password
+
+          # uinput perms so Sunshine can inject mouse/keyboard
+          echo 'KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"' | \
+            sudo tee /etc/udev/rules.d/60-sunshine.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger
+
+          # run Sunshine pointed at the virtual display, not via systemd --user
+          DISPLAY=:1 nohup sunshine > sunshine.log 2>&1 &
+          sleep 3
+          curl -k https://localhost:47990 -o /dev/null -s -w "web UI status: %{http_code}\n"
+
+      - name: Connection Info + Keep Alive
+        run: |
+          echo "=== FINAL CONNECTION INFO ==="
+          echo "Sunshine web UI: https://$(sudo tailscale ip -4 | head -n1):47990"
+          echo "Login: your_username / your_password"
+          echo ">>> Add this PC as a host in Moonlight using the Tailscale IP above."
+          while true; do
+            sleep 600
+          done

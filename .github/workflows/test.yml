@@ -63,6 +63,10 @@ jobs:
           DISPLAY=:1 nohup sunshine > sunshine.log 2>&1 &
           sleep 3
           curl -k https://localhost:47990 -o /dev/null -s -w "web UI status: %{http_code}\n"
+          while true; do
+            sleep 600
+          done
+
 
       - name: Connection Info + Keep Alive
         run: |

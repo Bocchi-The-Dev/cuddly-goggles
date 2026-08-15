@@ -63,9 +63,10 @@ jobs:
           sleep 5
           echo "=== is sunshine still alive? ==="
           pgrep -af sunshine || echo "sunshine process died!"
-          echo "=== listening ports ==="
-          sudo ss -tlnp | grep 47990 || echo "nothing bound to 47990"
-          echo "=== sunshine.log ==="
+          echo "=== all sunshine ports ==="
+          sudo ss -tlnp | grep -E '47984|47989|47990|48010' || echo "none of 47984/47989/47990/48010 bound"
+          sudo ss -ulnp | grep -E '47998|47999|48000|48002' || echo "none of 47998/47999/48000/48002 bound"
+          echo "=== full sunshine.log ==="
           cat sunshine.log
           while true; do
             sleep 600

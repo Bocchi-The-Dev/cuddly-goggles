@@ -75,11 +75,8 @@ jobs:
           echo "=== all sunshine ports ==="
           sudo ss -tlnp | grep -E '47984|47989|47990|48010' || echo "none of 47984/47989/47990/48010 bound"
           sudo ss -ulnp | grep -E '47998|47999|48000|48002' || echo "none of 47998/47999/48000/48002 bound"
-          echo "=== full sunshine.log ==="
-          cat sunshine.log
-          while true; do
-            sleep 600
-          done
+          echo "=== streaming sunshine.log — attempt pairing now, log will show it live ==="
+          tail -f sunshine.log
       - name: Connection Info + Keep Alive
         run: |
           echo "=== FINAL CONNECTION INFO ==="

@@ -56,11 +56,9 @@ jobs:
           pgrep -af Xvfb || echo "Xvfb is NOT running!"
           pgrep -af xfce4-session || echo "xfce4-session is NOT running!"
 
-          # --- CSRF fix: write config before first launch ---
-          TS_IP=$(tailscale ip -4)
           mkdir -p ~/.config/sunshine
           cat >> ~/.config/sunshine/sunshine.conf <<EOF
-          csrf_allowed_origins = https://${TS_IP}:47990
+          csrf_allowed_origins = ${CSRF_ORIGIN}
           EOF
           echo "=== sunshine.conf ==="
           cat ~/.config/sunshine/sunshine.conf

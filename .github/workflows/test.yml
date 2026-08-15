@@ -40,12 +40,6 @@ jobs:
           DISPLAY=:1 startxfce4 &
           sleep 3
 
-      - name: Install Tailscale
-        run: |
-          curl -fsSL https://tailscale.com/install.sh | sudo sh
-          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
-          sudo tailscale ip -4
-
       - name: Setup Sunshine
         run: |
           curl -fsSL -o sunshine.deb https://github.com/LizardByte/Sunshine/releases/download/v2026.516.143833/sunshine-ubuntu-24.04-amd64.deb
@@ -61,6 +55,15 @@ jobs:
           echo "=== confirming Xvfb/XFCE are still alive ==="
           pgrep -af Xvfb || echo "Xvfb is NOT running!"
           pgrep -af xfce4-session || echo "xfce4-session is NOT running!"
+
+          # --- CSRF fix: write config before first launch ---
+          TS_IP=$(tailscale ip -4)
+          mkdir -p ~/.config/sunshine
+          cat >> ~/.config/sunshine/sunshine.conf <<EOF
+          csrf_allowed_origins = https://${TS_IP}:47990
+          EOF
+          echo "=== sunshine.conf ==="
+          cat ~/.config/sunshine/sunshine.conf
 
           DISPLAY=:1 nohup sunshine > sunshine.log 2>&1 &
           echo "Sunshine PID: $!"

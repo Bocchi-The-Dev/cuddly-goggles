@@ -55,6 +55,7 @@ jobs:
           mkdir -p ~/.config/sunshine
           cat >> ~/.config/sunshine/sunshine.conf <<EOF
           csrf_allowed_origins = ${CSRF_ORIGIN}
+          min_log_level = debug
           EOF
           echo "=== sunshine.conf ==="
           cat ~/.config/sunshine/sunshine.conf

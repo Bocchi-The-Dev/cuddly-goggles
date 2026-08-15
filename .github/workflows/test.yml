@@ -60,7 +60,16 @@ jobs:
           cat ~/.config/sunshine/sunshine.conf
           DISPLAY=:1 nohup sunshine > sunshine.log 2>&1 &
           echo "Sunshine PID: $!"
-          sleep 5
+
+          echo "=== waiting for sunshine to bind 47990 ==="
+          for i in $(seq 1 30); do
+            if sudo ss -tlnp | grep -q 47990; then
+              echo "Sunshine is up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
           echo "=== is sunshine still alive? ==="
           pgrep -af sunshine || echo "sunshine process died!"
           echo "=== all sunshine ports ==="

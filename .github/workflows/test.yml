@@ -51,7 +51,7 @@ jobs:
           curl -fsSL -o sunshine.deb https://github.com/LizardByte/Sunshine/releases/download/v2026.516.143833/sunshine-ubuntu-24.04-amd64.deb
           sudo dpkg -i sunshine.deb
           sudo apt-get install -f -y
-          sunshine --creds your_username your_password
+          sunshine --creds runner runner
 
           echo 'KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"' | \
           sudo tee /etc/udev/rules.d/60-sunshine.rules

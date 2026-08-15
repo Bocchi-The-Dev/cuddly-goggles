@@ -58,7 +58,7 @@ jobs:
           EOF
           echo "=== sunshine.conf ==="
           cat ~/.config/sunshine/sunshine.conf
-          DISPLAY=:1 nohup sunshine > sunshine.log 2>&1 &
+          DISPLAY=:1 stdbuf -oL -eL nohup sunshine > sunshine.log 2>&1 &
           echo "Sunshine PID: $!"
 
           echo "=== waiting for sunshine to bind 47990 ==="

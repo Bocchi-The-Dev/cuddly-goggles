@@ -74,11 +74,15 @@ jobs:
           echo "=== FINAL CONNECTION INFO ==="
           echo "USERNAME: ${USERNAME}"
           echo "PASSWORD: ${PASSWORD}"
+          echo
           echo "Tailscale IPs:"
           sudo tailscale ip -4 || true
           echo
-          echo ">>> Connect with any RDP client using the IP above (port 3389)."
+          echo "RustDesk Server ID:"
+          echo "${RUSTDESK_SERVER_ID}"
+          echo"
           echo ">>> Keeping runner alive..."
           while true; do
             sleep 600
           done
+

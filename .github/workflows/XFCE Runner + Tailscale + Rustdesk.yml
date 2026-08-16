@@ -57,16 +57,17 @@ jobs:
           sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
           TS_IP=$(sudo tailscale ip -4)
           echo "TAILSCALE_IP=${TS_IP}" >> "$GITHUB_ENV"
-
-      - name: Configure RustDesk (permanent password, no relay server)
+          
+      - name: Start RustDesk service
         run: |
           set -euo pipefail
-          mkdir -p ~/.config/rustdesk
-          # start the client against the display we just created
-          rustdesk --get-id
-          sudo rustdesk --password "${RUSTDESK_PASSWORD}"
-          RUSTDESK_ID=$(rustdesk --get-id | tr -d '[:space:]')
-          echo "RUSTDESK_ID=${RUSTDESK_ID}" >> "$GITHUB_ENV"
+          sudo systemctl enable --now rustdesk
+          # poll until it's actually listening instead of assuming
+          for i in $(seq 1 20); do
+            sudo ss -tulnp | grep -q ':21118\|:21116' && break
+            sleep 1
+          done
+          sudo ss -tulnp | grep -E ':2111[5-9]' || { echo "rustdesk is not listening on any expected port"; sudo journalctl -u rustdesk --no-pager -n 100; exit 1; }
 
       - name: Connection Info + Keep Alive
         run: |

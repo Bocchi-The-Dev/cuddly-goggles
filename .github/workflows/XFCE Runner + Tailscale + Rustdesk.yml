@@ -29,16 +29,34 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xfce4 xfce4-goodies xorg dbus-x11
 
-          # set up xfce user
           echo "startxfce4" | sudo tee /home/${USERNAME}/.xsession
           sudo chown ${USERNAME}:${USERNAME} /home/${USERNAME}/.xsession
-    
-      - name: Install Rustdesk
+
+      - name: Install RustDesk SERVER (hbbs + hbbr)
         run: |
-          echo ">>> Installing Rustdesk"
-          wget https://raw.githubusercontent.com/techahold/rustdeskinstall/master/install.sh
-          chmod +x install.sh
-          echo -e "1\n1" | ./install.sh
+          echo ">>> Installing RustDesk SERVER (hbbs + hbbr)..."
+
+          HBBS_URL="https://github.com/rustdesk/rustdesk-server/releases/download/1.1.16/rustdesk-server-hbbs_1.1.16_amd64.deb"
+          HBBR_URL="https://github.com/rustdesk/rustdesk-server/releases/download/1.1.16/rustdesk-server-hbbr_1.1.16_amd64.deb"
+
+          HBBS_DEB="$TMPDIR/hbbs.deb"
+          HBBR_DEB="$TMPDIR/hbbr.deb"
+
+          wget -O "$HBBS_DEB" "$HBBS_URL"
+          wget -O "$HBBR_DEB" "$HBBR_URL"
+
+          sudo dpkg -i "$HBBS_DEB" || sudo apt-get install -f -y
+          sudo dpkg -i "$HBBR_DEB" || sudo apt-get install -f -y
+
+          sudo systemctl enable rustdesk-hbbs
+          sudo systemctl enable rustdesk-hbbr
+          sudo systemctl start rustdesk-hbbs
+          sudo systemctl start rustdesk-hbbr
+
+          sleep 5
+
+          SERVER_ID=$(sudo cat /var/lib/rustdesk-server/id_ed25519.pub | tr -d '[:space:]')
+          echo "RUSTDESK_SERVER_ID=$SERVER_ID" >> "$GITHUB_ENV"
 
       - name: Install Tailscale + start rustdesk
         run: |
@@ -46,8 +64,9 @@ jobs:
           curl -fsSL https://tailscale.com/install.sh | sudo sh
           sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
           sudo tailscale ip -4
+
           sudo systemctl start rustdesk-hbbs
-          sudo systemctl start rustdesk-hbbr   
+          sudo systemctl start rustdesk-hbbr
 
       - name: Connection Info + Keep Alive
         run: |

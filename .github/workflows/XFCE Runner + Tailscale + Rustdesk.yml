@@ -39,8 +39,8 @@ jobs:
           HBBS_URL="https://github.com/rustdesk/rustdesk-server/releases/download/1.1.16/rustdesk-server-hbbs_1.1.16_amd64.deb"
           HBBR_URL="https://github.com/rustdesk/rustdesk-server/releases/download/1.1.16/rustdesk-server-hbbr_1.1.16_amd64.deb"
 
-          HBBS_DEB="$TMPDIR/hbbs.deb"
-          HBBR_DEB="$TMPDIR/hbbr.deb"
+          HBBS_DEB="/tmp/hbbs.deb"
+          HBBR_DEB="/tmp/hbbr.deb"
 
           wget -O "$HBBS_DEB" "$HBBS_URL"
           wget -O "$HBBR_DEB" "$HBBR_URL"
@@ -57,6 +57,7 @@ jobs:
 
           SERVER_ID=$(sudo cat /var/lib/rustdesk-server/id_ed25519.pub | tr -d '[:space:]')
           echo "RUSTDESK_SERVER_ID=$SERVER_ID" >> "$GITHUB_ENV"
+
 
       - name: Install Tailscale + start rustdesk
         run: |

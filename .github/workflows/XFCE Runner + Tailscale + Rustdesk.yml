@@ -25,7 +25,7 @@ jobs:
 
       - name: Install XFCE
         run: |
-          echo ">>> Installing lightweight XFCE Desktop..."
+          echo "Installing lightweight XFCE Desktop..."
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xfce4 xfce4-goodies xorg dbus-x11
 
@@ -34,7 +34,7 @@ jobs:
 
       - name: Install RustDesk SERVER (hbbs + hbbr)
         run: |
-          echo ">>> Installing RustDesk SERVER (hbbs + hbbr)..."
+          echo "Installing RustDesk SERVER (hbbs + hbbr)..."
 
           HBBS_URL="https://github.com/rustdesk/rustdesk-server/releases/download/1.1.16/rustdesk-server-hbbs_1.1.16_amd64.deb"
           HBBR_URL="https://github.com/rustdesk/rustdesk-server/releases/download/1.1.16/rustdesk-server-hbbr_1.1.16_amd64.deb"
@@ -58,10 +58,25 @@ jobs:
           SERVER_ID=$(sudo cat /var/lib/rustdesk-server/id_ed25519.pub | tr -d '[:space:]')
           echo "RUSTDESK_SERVER_ID=$SERVER_ID" >> "$GITHUB_ENV"
 
+      - name: Install RustDesk CLIENT
+        run: |
+          echo "Installing RustDesk CLIENT..."
+          CLIENT_URL="https://github.com/rustdesk/rustdesk/releases/download/1.3.1/rustdesk-1.3.1-x86_64.deb"
+          CLIENT_DEB="/tmp/rustdesk-client.deb"
+
+          wget -O "$CLIENT_DEB" "$CLIENT_URL"
+          sudo dpkg -i "$CLIENT_DEB" || sudo apt-get install -f -y
+
+          rustdesk --password "runner" &
+
+          sleep 5
+
+          CLIENT_ID=$(rustdesk --get-id | tr -d '[:space:]')
+          echo "RUSTDESK_CLIENT_ID=$CLIENT_ID" >> "$GITHUB_ENV"
 
       - name: Install Tailscale + start rustdesk
         run: |
-          echo ">>> Installing Tailscale..."
+          echo "Installing Tailscale..."
           curl -fsSL https://tailscale.com/install.sh | sudo sh
           sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
           sudo tailscale ip -4
@@ -78,11 +93,13 @@ jobs:
           echo "Tailscale IPs:"
           sudo tailscale ip -4 || true
           echo
-          echo "RustDesk Server ID:"
+          echo "RustDesk Server Public Key:"
           echo "${RUSTDESK_SERVER_ID}"
-          echo"
-          echo ">>> Keeping runner alive..."
+          echo
+          echo "RustDesk Client ID (use this to connect):"
+          echo "${RUSTDESK_CLIENT_ID}"
+          echo
+          echo "Keeping runner alive..."
           while true; do
             sleep 600
           done
-

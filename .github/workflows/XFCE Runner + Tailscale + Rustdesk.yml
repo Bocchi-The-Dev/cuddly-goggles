@@ -1,4 +1,4 @@
-name: Setup XFCE Runner + Tailscale
+name: Setup XFCE Runner + Tailscale + Rustdesk
 
 on:
   workflow_dispatch:
@@ -38,7 +38,7 @@ jobs:
           echo ">>> Installing Rustdesk"
           wget https://raw.githubusercontent.com/techahold/rustdeskinstall/master/install.sh
           chmod +x install.sh
-          ./install.sh
+          echo "1" | ./install.sh
 
       - name: Install Tailscale + start rustdesk
         run: |

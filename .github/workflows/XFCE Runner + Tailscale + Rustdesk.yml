@@ -38,7 +38,7 @@ jobs:
           echo ">>> Installing Rustdesk"
           wget https://raw.githubusercontent.com/techahold/rustdeskinstall/master/install.sh
           chmod +x install.sh
-          echo "1" | ./install.sh
+          echo -e "1\n1" | ./install.sh
 
       - name: Install Tailscale + start rustdesk
         run: |

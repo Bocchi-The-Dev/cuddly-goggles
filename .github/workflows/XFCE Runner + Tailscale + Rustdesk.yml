@@ -1,11 +1,8 @@
 name: Setup XFCE Runner + Tailscale + Rustdesk
-
 on:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   setup-gui-runner:
     runs-on: ubuntu-latest
@@ -13,67 +10,73 @@ jobs:
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
       USERNAME: runner
       PASSWORD: runner
+      RUSTDESK_PASSWORD: ${{ secrets.RUSTDESK_PASSWORD }}
       TAILSCALE_HOSTNAME: gh-xfce-${{ github.run_id }}
-
+      DISPLAY: ":1"
     steps:
       - uses: actions/checkout@v4
 
       - name: Ensure runner user has sudo
         run: |
+          set -euo pipefail
           echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
           echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
 
-      - name: Install XFCE
+      - name: Install XFCE + virtual display
         run: |
-          echo "Installing lightweight XFCE Desktop..."
+          set -euo pipefail
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xfce4 xfce4-goodies xorg dbus-x11
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            xfce4 xfce4-goodies xvfb dbus-x11 x11-utils
 
-          echo "startxfce4" | sudo tee /home/${USERNAME}/.xsession
-          sudo chown ${USERNAME}:${USERNAME} /home/${USERNAME}/.xsession
-
-      - name: Install RustDesk
+      - name: Start virtual display + XFCE
         run: |
-          echo "Installing RustDesk"
+          set -euo pipefail
+          Xvfb ${DISPLAY} -screen 0 1920x1080x24 &
+          # wait for the X server socket instead of a flat sleep
+          for i in $(seq 1 20); do
+            xdpyinfo -display ${DISPLAY} >/dev/null 2>&1 && break
+            sleep 1
+          done
+          xdpyinfo -display ${DISPLAY} >/dev/null 2>&1 || { echo "Xvfb never came up"; exit 1; }
+          dbus-launch --exit-with-session startxfce4 &
+          sleep 3
+          echo "XFCE launched on ${DISPLAY}"
+
+      - name: Install RustDesk client
+        run: |
+          set -euo pipefail
           CLIENT_URL="https://github.com/rustdesk/rustdesk/releases/download/1.3.1/rustdesk-1.3.1-x86_64.deb"
-          CLIENT_DEB="/tmp/rustdesk-client.deb"
+          wget -q -O /tmp/rustdesk-client.deb "$CLIENT_URL"
+          sudo dpkg -i /tmp/rustdesk-client.deb || sudo apt-get install -f -y
 
-          wget -O "$CLIENT_DEB" "$CLIENT_URL"
-          sudo dpkg -i "$CLIENT_DEB" || sudo apt-get install -f -y
-
-          mkdir -p ~/.config/rustdesk
-
-          rustdesk --headless --password "runner" &
-
-          sleep 5
-
-          CLIENT_ID=$(rustdesk --get-id | tr -d '[:space:]')
-          echo "RUSTDESK_CLIENT_ID=$CLIENT_ID" >> "$GITHUB_ENV"
-
-      - name: Install Tailscale + start rustdesk
+      - name: Install Tailscale
         run: |
-          echo "Installing Tailscale..."
+          set -euo pipefail
           curl -fsSL https://tailscale.com/install.sh | sudo sh
           sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
-          sudo tailscale ip -4
+          TS_IP=$(sudo tailscale ip -4)
+          echo "TAILSCALE_IP=${TS_IP}" >> "$GITHUB_ENV"
 
-          sudo systemctl start rustdesk-hbbs
-          sudo systemctl start rustdesk-hbbr
+      - name: Configure RustDesk (permanent password, no relay server)
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.config/rustdesk
+          # start the client against the display we just created
+          rustdesk --get-id
+          sudo rustdesk --password "${RUSTDESK_PASSWORD}"
+          RUSTDESK_ID=$(rustdesk --get-id | tr -d '[:space:]')
+          echo "RUSTDESK_ID=${RUSTDESK_ID}" >> "$GITHUB_ENV"
 
       - name: Connection Info + Keep Alive
         run: |
           echo "=== FINAL CONNECTION INFO ==="
-          echo "USERNAME: ${USERNAME}"
-          echo "PASSWORD: ${PASSWORD}"
+          echo "Connect via Tailscale IP (no public relay involved):"
+          echo "  Tailscale IP: ${TAILSCALE_IP}"
+          echo "  RustDesk password: ${RUSTDESK_PASSWORD}"
           echo
-          echo "Tailscale IPs:"
-          sudo tailscale ip -4 || true
-          echo
-          echo "RustDesk Server Public Key:"
-          echo "${RUSTDESK_SERVER_ID}"
-          echo
-          echo "RustDesk Client ID (use this to connect):"
-          echo "${RUSTDESK_CLIENT_ID}"
+          echo "RustDesk ID (only useful if you're NOT on the tailnet):"
+          echo "  ${RUSTDESK_ID}"
           echo
           echo "Keeping runner alive..."
           while true; do

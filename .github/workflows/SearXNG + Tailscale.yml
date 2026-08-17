@@ -1,4 +1,4 @@
-name: Setup SSH Runner + Tailscale
+name: Setup SearXNG + Tailscale
 
 on:
   workflow_dispatch:

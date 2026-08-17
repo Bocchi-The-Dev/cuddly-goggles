@@ -28,6 +28,12 @@ jobs:
           echo ">>> Installing FTP..."
           sudo apt-get update -qq
           sudo apt-get install -y -qq vsftpd
+          sudo bash -c 'cat >> /etc/vsftpd.conf <<EOF
+          write_enable=YES
+          local_enable=YES
+          local_umask=022
+          allow_writeable_chroot=YES
+          EOF'
           sudo systemctl enable vsftpd
           sudo systemctl restart vsftpd
 

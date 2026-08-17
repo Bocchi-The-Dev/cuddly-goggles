@@ -41,9 +41,9 @@ jobs:
         run: |
           echo ">>> Installing SearXNG"
           # Create the environment and configuration directories
-          $ mkdir -p ./searxng/core-config/
-          $ cd ./searxng/
-          $ curl -fsSL \
+          mkdir -p ./searxng/core-config/
+          cd ./searxng/
+          curl -fsSL \
           -O https://raw.githubusercontent.com/searxng/searxng/master/container/docker-compose.yml \
           -O https://raw.githubusercontent.com/searxng/searxng/master/container/.env.example
           docker compose up -d

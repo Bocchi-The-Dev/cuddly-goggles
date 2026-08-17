@@ -1,4 +1,4 @@
-name: Setup SSH Runner + Tailscale
+name: Setup FTP Runner + Tailscale
 
 on:
   workflow_dispatch:
@@ -40,13 +40,13 @@ jobs:
       - name: Show SSH Connection Info
         run: |
           TAILSCALE_IP=$(tailscale ip -4 | head -n1)
-          echo "=== SSH CONNECTION INFO ==="
+          echo "=== FTP CONNECTION INFO ==="
           echo "IP: ${TAILSCALE_IP}"
           echo "USERNAME: ${USERNAME}"
           echo "PASSWORD: ${PASSWORD}"
           echo
           echo ">>> Connect with:"
-          echo "    ssh -o StrictHostKeyChecking=no ${USERNAME}@${TAILSCALE_IP}"
+          echo "ftp://${TAILSCALE_IP}"
           echo
           echo ">>> Keeping runner alive..."
           tail -f /dev/null

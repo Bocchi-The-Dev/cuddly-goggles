@@ -24,19 +24,12 @@ jobs:
           echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
           echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
 
-      - name: Fix apt mirror + update
-        run: |
-          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
-          sudo apt-get update
-
       - name: Install XFCE + x2go + SSH
         run: |
           echo ">>> Installing XFCE + x2go stack..."
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            xfce4 xfce4-goodies xorg dbus-x11 \
-            x2goserver x2goserver-xsession \
-            openssh-server
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+          xfce4 xorg dbus-x11 x2goserver x2goserver-xsession openssh-server xfce4-terminal
 
           # x2go needs a real .xsession to know what DE to launch
           echo "startxfce4" | sudo -u ${USERNAME} tee /home/${USERNAME}/.xsession

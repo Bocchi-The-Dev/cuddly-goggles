@@ -27,8 +27,8 @@ jobs:
       - name: Install XFCE + x2go + SSH
         run: |
           echo ">>> Installing XFCE + x2go stack..."
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             xfce4 xfce4-goodies xorg dbus-x11 \
             x2goserver x2goserver-xsession \
             openssh-server

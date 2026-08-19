@@ -1,0 +1,89 @@
+name: Setup XFCE Runner + Sunshine + Tailscale
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  setup-gui-runner:
+    runs-on: ubuntu-latest
+    env:
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      USERNAME: runner
+      PASSWORD: runner
+      TAILSCALE_HOSTNAME: gh-xfce-${{ github.run_id }}
+      DISPLAY: ":1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure runner user has sudo + lingering session
+        run: |
+          echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
+          echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
+          # needed so `systemctl --user` works at all with no real login
+          sudo loginctl enable-linger ${USERNAME}
+      - name: Install XFCE + virtual display
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            xfce4 xfce4-goodies xorg dbus-x11 xvfb x11-xserver-utils miniupnpc
+      - name: Start virtual display + XFCE session
+        run: |
+          # fake a screen: Xvfb owns :1, at a normal desktop resolution
+          Xvfb :1 -screen 0 1920x1080x24 &
+          sleep 2
+          DISPLAY=:1 startxfce4 &
+          sleep 3
+      - name: Install Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+          sudo tailscale ip -4
+          TS_IP=$(sudo tailscale ip -4)
+          echo "CSRF_ORIGIN=https://${TS_IP}:47990" >> "$GITHUB_ENV"
+      - name: Setup Sunshine
+        run: |
+          curl -fsSL -o sunshine.deb https://github.com/LizardByte/Sunshine/releases/download/v2026.516.143833/sunshine-ubuntu-24.04-amd64.deb
+          sudo dpkg -i sunshine.deb
+          sudo apt-get install -f -y
+          sunshine --creds runner runner
+          echo 'KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"' | \
+          sudo tee /etc/udev/rules.d/60-sunshine.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger
+          echo "=== confirming Xvfb/XFCE are still alive ==="
+          pgrep -af Xvfb || echo "Xvfb is NOT running!"
+          pgrep -af xfce4-session || echo "xfce4-session is NOT running!"
+          mkdir -p ~/.config/sunshine
+          cat >> ~/.config/sunshine/sunshine.conf <<EOF
+          csrf_allowed_origins = ${CSRF_ORIGIN}
+          min_log_level = debug
+          EOF
+          echo "=== sunshine.conf ==="
+          cat ~/.config/sunshine/sunshine.conf
+          DISPLAY=:1 stdbuf -oL -eL nohup sunshine > sunshine.log 2>&1 &
+          echo "Sunshine PID: $!"
+
+          echo "=== waiting for sunshine to bind 47990 ==="
+          for i in $(seq 1 30); do
+            if sudo ss -tlnp | grep -q 47990; then
+              echo "Sunshine is up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
+          echo "=== is sunshine still alive? ==="
+          pgrep -af sunshine || echo "sunshine process died!"
+          echo "=== all sunshine ports ==="
+          sudo ss -tlnp | grep -E '47984|47989|47990|48010' || echo "none of 47984/47989/47990/48010 bound"
+          sudo ss -ulnp | grep -E '47998|47999|48000|48002' || echo "none of 47998/47999/48000/48002 bound"
+          echo "=== streaming sunshine.log — attempt pairing now, log will show it live ==="
+          tail -f sunshine.log
+      - name: Connection Info + Keep Alive
+        run: |
+          echo "=== FINAL CONNECTION INFO ==="
+          echo "Sunshine web UI: https://$(sudo tailscale ip -4 | head -n1):47990"
+          echo "Login: your_username / your_password"
+          echo ">>> Add this PC as a host in Moonlight using the Tailscale IP above."
+          while true; do
+            sleep 600
+          done

@@ -14,6 +14,24 @@ jobs:
       DISPLAY: ":1"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Make apt mirror-resilient
+        run: |
+          sudo tee /etc/apt/sources.list.d/ubuntu.sources > /dev/null <<'EOF'
+          Types: deb
+          URIs: https://archive.ubuntu.com/ubuntu https://azure.archive.ubuntu.com/ubuntu http://mirror.us.leaseweb.net/ubuntu
+          Suites: noble noble-updates noble-backports
+          Components: main universe restricted multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+          Types: deb
+          URIs: https://archive.ubuntu.com/ubuntu https://azure.archive.ubuntu.com/ubuntu
+          Suites: noble-security
+          Components: main universe restricted multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+          sudo apt-get update
+
       - name: Ensure runner user has sudo + lingering session
         run: |
           echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
@@ -25,6 +43,7 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
             xfce4 xfce4-goodies xorg dbus-x11 xvfb x11-xserver-utils miniupnpc
+
       - name: Start virtual display + XFCE session
         run: |
           # fake a screen: Xvfb owns :1, at a normal desktop resolution
@@ -32,6 +51,7 @@ jobs:
           sleep 2
           DISPLAY=:1 startxfce4 &
           sleep 3
+
       - name: Install Tailscale
         run: |
           curl -fsSL https://tailscale.com/install.sh | sudo sh
@@ -39,6 +59,7 @@ jobs:
           sudo tailscale ip -4
           TS_IP=$(sudo tailscale ip -4)
           echo "CSRF_ORIGIN=https://${TS_IP}:47990" >> "$GITHUB_ENV"
+
       - name: Setup Sunshine
         run: |
           curl -fsSL -o sunshine.deb https://github.com/LizardByte/Sunshine/releases/download/v2026.516.143833/sunshine-ubuntu-24.04-amd64.deb

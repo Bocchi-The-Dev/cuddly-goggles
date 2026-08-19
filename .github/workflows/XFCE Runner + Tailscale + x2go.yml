@@ -1,0 +1,67 @@
+name: Setup XFCE Runner + Tailscale (x2go)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup-gui-runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      USERNAME: runner
+      PASSWORD: runner
+      TAILSCALE_HOSTNAME: gh-xfce-${{ github.run_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure runner user has sudo + password auth
+        run: |
+          echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
+          echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
+
+      - name: Install XFCE + x2go + SSH
+        run: |
+          echo ">>> Installing XFCE + x2go stack..."
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            xfce4 xfce4-goodies xorg dbus-x11 \
+            x2goserver x2goserver-xsession \
+            openssh-server
+
+          # x2go needs a real .xsession to know what DE to launch
+          echo "startxfce4" | sudo -u ${USERNAME} tee /home/${USERNAME}/.xsession
+
+          # allow password auth over SSH (x2go client logs in this way)
+          sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo systemctl restart ssh
+
+          # x2go's own service
+          sudo systemctl enable --now x2goserver || true
+
+      - name: Install Tailscale
+        run: |
+          echo ">>> Installing Tailscale..."
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+          sudo tailscale ip -4
+
+      - name: Connection Info + Keep Alive
+        run: |
+          echo "=== FINAL CONNECTION INFO ==="
+          echo "Connect using the x2go client (not RDP!)"
+          echo "USERNAME: ${USERNAME}"
+          echo "PASSWORD: ${PASSWORD}"
+          echo "Tailscale hostname: ${TAILSCALE_HOSTNAME}"
+          echo "Tailscale IPs:"
+          sudo tailscale ip -4 || true
+          echo
+          echo ">>> In x2go client: Host = tailscale IP/hostname, Login = ${USERNAME}, Session type = XFCE, SSH port = 22"
+          echo ">>> Keeping runner alive..."
+          while true; do
+            sleep 600
+          done

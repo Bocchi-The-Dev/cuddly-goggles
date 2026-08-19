@@ -24,6 +24,11 @@ jobs:
           echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
           echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
 
+      - name: Fix apt mirror + update
+        run: |
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+
       - name: Install XFCE + x2go + SSH
         run: |
           echo ">>> Installing XFCE + x2go stack..."

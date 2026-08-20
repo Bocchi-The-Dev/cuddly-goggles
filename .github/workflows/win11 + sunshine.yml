@@ -1,0 +1,87 @@
+name: Sunshine + Win11
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-sunshine:
+    runs-on: windows-latest
+    steps:
+      - name: Install & Connect Tailscale
+        shell: powershell
+        run: |
+          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.92.3-amd64.msi"
+          $installerPath = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTHKEY }} --hostname=gh-runner-${{ github.run_id }}
+          $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+          "TAILSCALE_IP=$tsIP" | Out-File -Append $env:GITHUB_ENV
+
+      - name: Install Sunshine
+        shell: powershell
+        run: |
+          $shUrl = "https://github.com/LizardByte/Sunshine/releases/download/v2025.923.33222/Sunshine-Windows-AMD64-installer.exe"
+          $installerPath = "$env:TEMP\Sunshine-Windows-AMD64-installer.exe"
+          Invoke-WebRequest -Uri $shUrl -OutFile $installerPath
+          Start-Process -FilePath $installerPath -ArgumentList "/quiet", "/norestart" -Wait
+
+      - name: Configure Firewall
+        shell: powershell
+        run: |
+          New-NetFirewallRule -DisplayName "Sunshine TCP" -Direction Inbound -Protocol TCP -LocalPort 47984,47989,47990,48010 -Action Allow
+          New-NetFirewallRule -DisplayName "Sunshine UDP" -Direction Inbound -Protocol UDP -LocalPort 47998-48000,48002,48010 -Action Allow
+
+      - name: Force a real desktop session (Autologon)
+        shell: powershell
+        run: |
+          # Hosted Windows runners have no interactive session, so Sunshine's
+          # desktop-duplication capture has nothing to grab. Autologon forces
+          # a real console session to exist.
+          $autologonUrl = "https://download.sysinternals.com/files/AutologonSetupPack.zip"
+          $zipPath = "$env:TEMP\autologon.zip"
+          Invoke-WebRequest -Uri $autologonUrl -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\autologon" -Force
+
+          $pw = "MR.English2008"
+          net user runneradmin "$pw"
+          & "$env:TEMP\autologon\Autologon64.exe" runneradmin . "$pw" /accepteula
+
+          # Disable lock screen / screensaver so the session stays active and unlocked
+          reg add "HKCU\Control Panel\Desktop" /v ScreenSaveActive /t REG_SZ /d 0 /f
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v NoLockScreen /t REG_DWORD /d 1 /f
+
+      - name: Start Sunshine
+        shell: powershell
+        run: |
+          $svc = Get-Service -Name "*sunshine*" -ErrorAction SilentlyContinue
+          if ($svc) {
+            Start-Service $svc.Name
+          } else {
+            Start-Process "C:\Program Files\Sunshine\sunshine.exe"
+          }
+          Start-Sleep -Seconds 10
+
+      - name: Set Sunshine admin credentials
+        shell: powershell
+        run: |
+          # Pre-seed the web UI admin account so no manual browser step is needed
+          $body = @{ username = "admin"; newPassword = "MR.English2008"; confirmNewPassword = "MR.English2008" } | ConvertTo-Json
+          Invoke-RestMethod -Uri "https://localhost:47990/api/password" -Method Post -Body $body -ContentType "application/json" -SkipCertificateCheck
+
+      - name: Runner Status & Keep Alive
+        shell: powershell
+        run: |
+          $endTime = (Get-Date).AddHours(6)
+          Write-Host "================================"
+          Write-Host "CONNECTION DETAILS:"
+          Write-Host "Tailscale IP: $env:TAILSCALE_IP"
+          Write-Host "Sunshine Web UI: https://$env:TAILSCALE_IP:47990"
+          Write-Host "Username: admin"
+          Write-Host "Password: MR.English2008"
+          Write-Host "================================"
+
+          while ((Get-Date) -lt $endTime) {
+              Write-Host "Status: Online | IP: $env:TAILSCALE_IP | $(Get-Date)"
+              Start-Sleep -Seconds 60
+          }

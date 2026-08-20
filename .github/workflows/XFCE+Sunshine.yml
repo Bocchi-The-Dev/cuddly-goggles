@@ -80,6 +80,11 @@ jobs:
           EOF
           echo "=== sunshine.conf ==="
           cat ~/.config/sunshine/sunshine.conf
+
+          # enable core dumps in case sunshine segfaults during stream start
+          ulimit -c unlimited
+          sudo sysctl -w kernel.core_pattern=/tmp/core-%e-%p
+
           DISPLAY=:1 stdbuf -oL -eL nohup sunshine > sunshine.log 2>&1 &
           echo "Sunshine PID: $!"
 
@@ -97,7 +102,21 @@ jobs:
           echo "=== all sunshine ports ==="
           sudo ss -tlnp | grep -E '47984|47989|47990|48010' || echo "none of 47984/47989/47990/48010 bound"
           sudo ss -ulnp | grep -E '47998|47999|48000|48002' || echo "none of 47998/47999/48000/48002 bound"
+
           echo "=== streaming sunshine.log — attempt pairing now, log will show it live ==="
+          (
+            while true; do
+              if ! pgrep -af sunshine >/dev/null; then
+                echo ">>> SUNSHINE PROCESS DIED at $(date) <<<"
+                echo "=== last 150 lines of sunshine.log ==="
+                tail -150 sunshine.log
+                echo "=== core dumps present ==="
+                ls -la /tmp/core-* 2>/dev/null || echo "no core dump found"
+                break
+              fi
+              sleep 2
+            done
+          ) &
           tail -f sunshine.log
       - name: Connection Info + Keep Alive
         run: |

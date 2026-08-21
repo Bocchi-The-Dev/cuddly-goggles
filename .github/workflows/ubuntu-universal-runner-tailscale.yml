@@ -17,6 +17,7 @@ on:
           - budgie
           - gnome
           - kde
+          - i3
           - none (SSH only)
 
 permissions:
@@ -101,6 +102,10 @@ jobs:
             kde)
               sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq kde-plasma-desktop
               START_CMD="startplasma-x11"
+              ;;
+            i3)
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq i3-wm
+              START_CMD="i3 -c ~/.config/i3/config"
               ;;
           esac
 

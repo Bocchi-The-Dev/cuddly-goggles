@@ -1,0 +1,143 @@
+name: universal-runner-tailscale
+
+on:
+  workflow_dispatch:
+    inputs:
+      desktop_environment:
+        description: 'Select Desktop Environment (or None for SSH only)'
+        required: true
+        default: 'xfce'
+        type: choice
+        options:
+          - xfce
+          - lxde
+          - lxqt
+          - mate
+          - cinnamon
+          - budgie
+          - gnome
+          - kde
+          - none (SSH only)
+
+permissions:
+  contents: read
+
+jobs:
+  setup-runner:
+    runs-on: ubuntu-latest
+    env:
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      USERNAME: runner
+      PASSWORD: runner
+      TAILSCALE_HOSTNAME: gh-runner-${{ github.run_id }}
+      DE: ${{ inputs.desktop_environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure runner user has sudo
+        run: |
+          echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
+          echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
+
+      - name: Install OpenSSH Server
+        run: |
+          echo ">>> Installing OpenSSH..."
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server
+          sudo systemctl enable ssh
+          sudo systemctl restart ssh
+
+      - name: Install Core VNC Server Tools
+        if: ${{ inputs.desktop_environment != 'none (SSH only)' }}
+        run: |
+          echo ">>> Installing VNC base dependencies..."
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            dbus-x11 xorg tigervnc-standalone-server tigervnc-common tigervnc-tools
+
+          # Configure VNC password for the runner
+          mkdir -p /home/${USERNAME}/.vnc
+          echo ${PASSWORD} | vncpasswd -f > /home/${USERNAME}/.vnc/passwd
+          chmod 600 /home/${USERNAME}/.vnc/passwd
+          chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}/.vnc
+
+      - name: Install Selected Desktop Environment
+        if: ${{ inputs.desktop_environment != 'none (SSH only)' }}
+        run: |
+          echo ">>> Installing ${DE} Desktop Environment..."
+          
+          START_CMD=""
+          
+          case "$DE" in
+            xfce)
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xfce4 xfce4-terminal
+              START_CMD="startxfce4"
+              ;;
+            lxde)
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq lxde
+              START_CMD="startlxde"
+              ;;
+            lxqt)
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq lxqt
+              START_CMD="startlxqt"
+              ;;
+            mate)
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ubuntu-mate-core
+              START_CMD="mate-session"
+              ;;
+            cinnamon)
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cinnamon
+              START_CMD="cinnamon-session"
+              ;;
+            budgie)
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ubuntu-budgie-desktop
+              START_CMD="budgie-desktop"
+              ;;
+            gnome)
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ubuntu-desktop-minimal
+              START_CMD="export XDG_CURRENT_DESKTOP=\"GNOME\"\nexport XDG_SESSION_TYPE=x11\neval \$(/usr/bin/dbus-launch --sh-syntax --exit-with-session)\nexec /usr/bin/gnome-session"
+              ;;
+            kde)
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq kde-plasma-desktop
+              START_CMD="startplasma-x11"
+              ;;
+          esac
+
+          # Write start command to xstartup
+          echo -e "#!/bin/sh\n$START_CMD" > /home/${USERNAME}/.vnc/xstartup
+          chmod +x /home/${USERNAME}/.vnc/xstartup
+          chown ${USERNAME}:${USERNAME} /home/${USERNAME}/.vnc/xstartup
+
+      - name: Install Tailscale
+        run: |
+          echo ">>> Installing Tailscale..."
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+
+      - name: Start Services & Show Connection Info
+        run: |
+          TAILSCALE_IP=$(tailscale ip -4 | head -n1)
+
+          echo "=========================================="
+          echo "           CONNECTION DETAILS             "
+          echo "=========================================="
+          echo "Tailscale IP : ${TAILSCALE_IP}"
+          echo "Username     : ${USERNAME}"
+          echo "Password     : ${PASSWORD}"
+          echo "Selected DE  : ${DE}"
+          echo "------------------------------------------"
+          echo ">>> SSH Connection:"
+          echo "    ssh -o StrictHostKeyChecking=no ${USERNAME}@${TAILSCALE_IP}"
+          echo "------------------------------------------"
+
+          if [ "${DE}" != "none (SSH only)" ]; then
+            echo ">>> Starting VNC Server..."
+            sudo -u ${USERNAME} vncserver :1 -geometry 1280x800 -depth 24 -localhost no
+            echo ">>> VNC Connection:"
+            echo "    ${TAILSCALE_IP}:5901"
+            echo "------------------------------------------"
+          fi
+
+          echo ">>> Keeping runner alive..."
+          tail -f /dev/null

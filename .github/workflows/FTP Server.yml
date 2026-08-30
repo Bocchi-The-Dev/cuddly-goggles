@@ -1,11 +1,8 @@
-name: Setup FTP Runner + Tailscale
-
+name: Setup FTP Runner + Tailscale + AriaNg
 on:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   setup-ssh-runner:
     runs-on: ubuntu-latest
@@ -14,7 +11,9 @@ jobs:
       USERNAME: runner
       PASSWORD: runner
       TAILSCALE_HOSTNAME: gh-ssh-${{ github.run_id }}
-
+      ARIA2_RPC_SECRET: changeme123
+      ARIA2_RPC_PORT: 6800
+      ARIANG_PORT: 8080
     steps:
       - uses: actions/checkout@v4
 
@@ -43,16 +42,56 @@ jobs:
           curl -fsSL https://tailscale.com/install.sh | sudo sh
           sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
 
-      - name: Show SSH Connection Info
+      - name: Install and start aria2 (RPC backend)
+        run: |
+          echo ">>> Installing aria2..."
+          sudo apt-get install -y -qq aria2
+          mkdir -p /home/runner/aria2-downloads
+          nohup aria2c \
+            --enable-rpc \
+            --rpc-listen-all=true \
+            --rpc-allow-origin-all \
+            --rpc-listen-port=${ARIA2_RPC_PORT} \
+            --rpc-secret=${ARIA2_RPC_SECRET} \
+            --dir=/home/runner/aria2-downloads \
+            --continue=true \
+            > /tmp/aria2.log 2>&1 &
+          sleep 2
+          echo "aria2c started, pid $!"
+
+      - name: Download and serve AriaNg
+        run: |
+          echo ">>> Fetching latest AriaNg release..."
+          ARIANG_URL=$(curl -s https://api.github.com/repos/mayswind/AriaNg/releases/latest \
+            | grep "browser_download_url.*AriaNg-.*\.zip" \
+            | cut -d '"' -f4 | head -n1)
+          mkdir -p /home/runner/ariang
+          curl -fsSL "${ARIANG_URL}" -o /tmp/ariang.zip
+          sudo apt-get install -y -qq unzip
+          unzip -q /tmp/ariang.zip -d /home/runner/ariang
+
+          echo ">>> Serving AriaNg on port ${ARIANG_PORT}..."
+          cd /home/runner/ariang
+          nohup python3 -m http.server ${ARIANG_PORT} > /tmp/ariang-http.log 2>&1 &
+          sleep 1
+          echo "AriaNg web UI started, pid $!"
+
+      - name: Show Connection Info
         run: |
           TAILSCALE_IP=$(tailscale ip -4 | head -n1)
           echo "=== FTP CONNECTION INFO ==="
           echo "IP: ${TAILSCALE_IP}"
           echo "USERNAME: ${USERNAME}"
           echo "PASSWORD: ${PASSWORD}"
-          echo
-          echo ">>> Connect with:"
           echo "ftp://${TAILSCALE_IP}"
+          echo
+          echo "=== ARIANG WEB UI ==="
+          echo "URL: http://${TAILSCALE_IP}:${ARIANG_PORT}"
+          echo
+          echo "=== ARIA2 RPC (enter these into AriaNg -> Settings -> AriaNg Settings) ==="
+          echo "RPC Host: ${TAILSCALE_IP}"
+          echo "RPC Port: ${ARIA2_RPC_PORT}"
+          echo "RPC Secret: ${ARIA2_RPC_SECRET}"
           echo
           echo ">>> Keeping runner alive..."
           tail -f /dev/null

@@ -1,4 +1,4 @@
-name: Setup SSH Runner + bore.pub
+name: Setup SSH Runner + Tailscale + Mosh
 
 on:
   workflow_dispatch:
@@ -10,16 +10,19 @@ jobs:
   setup-ssh-runner:
     runs-on: ubuntu-latest
     env:
-      USERNAME: runner
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
       SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+      USERNAME: runner
+      TAILSCALE_HOSTNAME: gh-ssh-${{ github.run_id }}
 
     steps:
-      - name: Install and harden OpenSSH server
+      - name: Install and harden OpenSSH server, mosh, tmux
         run: |
           test -n "${SSH_PUBLIC_KEY}" || { echo "SSH_PUBLIC_KEY secret is not set"; exit 1; }
+          test -n "${TAILSCALE_AUTHKEY}" || { echo "TAILSCALE_AUTHKEY secret is not set"; exit 1; }
 
           sudo apt-get update -qq
-          sudo apt-get install -y -qq openssh-server
+          sudo apt-get install -y -qq openssh-server mosh tmux
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -32,51 +35,30 @@ jobs:
             'PasswordAuthentication no' \
             'KbdInteractiveAuthentication no' \
             'PermitRootLogin no' \
+            'UseDNS no' \
+            'GSSAPIAuthentication no' \
             | sudo tee /etc/ssh/sshd_config.d/99-hardening.conf
 
           sudo systemctl enable ssh
           sudo systemctl restart ssh
 
-      - name: Install bore
+      - name: Install Tailscale
         run: |
-          TAG=$(curl -fsSL https://api.github.com/repos/ekzhang/bore/releases/latest \
-            | grep -m1 '"tag_name"' | cut -d'"' -f4)
-          echo ">>> Installing bore ${TAG}..."
-          curl -fsSL "https://github.com/ekzhang/bore/releases/download/${TAG}/bore-${TAG}-x86_64-unknown-linux-musl.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin bore
-          bore --version
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
 
-      - name: Start bore tunnel
+      - name: Show connection info
         run: |
-          setsid nohup bore local 22 --to bore.pub > /tmp/bore.log 2>&1 &
-          echo $! > /tmp/bore.pid
-
-          PORT=""
-          for i in $(seq 1 30); do
-            PORT=$(grep -oE 'bore\.pub:[0-9]+' /tmp/bore.log | head -n1 | cut -d: -f2 || true)
-            [ -n "${PORT}" ] && break
-            sleep 1
-          done
-
-          if [ -z "${PORT}" ]; then
-            echo "Failed to get a bore.pub port. Log:"
-            cat /tmp/bore.log
-            exit 1
-          fi
-
-          echo "=== SSH CONNECTION INFO ==="
-          echo "HOST: bore.pub"
-          echo "PORT: ${PORT}"
+          TAILSCALE_IP=$(tailscale ip -4 | head -n1)
+          echo "=== CONNECTION INFO ==="
+          echo "IP: ${TAILSCALE_IP}"
+          echo "HOSTNAME: ${TAILSCALE_HOSTNAME}"
           echo "USERNAME: ${USERNAME}"
           echo
-          echo ">>> Connect with:"
-          echo "    ssh -p ${PORT} -o StrictHostKeyChecking=no ${USERNAME}@bore.pub"
+          echo ">>> Mosh:"
+          echo "    mosh --ssh=\"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\" ${USERNAME}@${TAILSCALE_IP}"
+          echo ">>> Plain SSH:"
+          echo "    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${USERNAME}@${TAILSCALE_IP}"
 
       - name: Keep runner alive
-        run: |
-          echo ">>> Keeping runner alive while the tunnel is up..."
-          while kill -0 "$(cat /tmp/bore.pid)" 2>/dev/null; do
-            sleep 30
-          done
-          echo "bore tunnel exited:"
-          cat /tmp/bore.log
+        run: sleep infinity

@@ -1,4 +1,4 @@
-name: Setup SSH Runner + Tailscale
+name: Setup SSH Runner + bore.pub
 
 on:
   workflow_dispatch:
@@ -10,43 +10,73 @@ jobs:
   setup-ssh-runner:
     runs-on: ubuntu-latest
     env:
-      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
       USERNAME: runner
-      PASSWORD: runner
-      TAILSCALE_HOSTNAME: gh-ssh-${{ github.run_id }}
+      SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Ensure runner user has sudo + password
+      - name: Install and harden OpenSSH server
         run: |
-          echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
-          echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
+          test -n "${SSH_PUBLIC_KEY}" || { echo "SSH_PUBLIC_KEY secret is not set"; exit 1; }
 
-      - name: Install OpenSSH server
-        run: |
-          echo ">>> Installing OpenSSH..."
           sudo apt-get update -qq
           sudo apt-get install -y -qq openssh-server
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${SSH_PUBLIC_KEY}" >> ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
+
+          echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
+
+          printf '%s\n' \
+            'PasswordAuthentication no' \
+            'KbdInteractiveAuthentication no' \
+            'PermitRootLogin no' \
+            | sudo tee /etc/ssh/sshd_config.d/99-hardening.conf
+
           sudo systemctl enable ssh
           sudo systemctl restart ssh
 
-      - name: Install Tailscale
+      - name: Install bore
         run: |
-          echo ">>> Installing Tailscale..."
-          curl -fsSL https://tailscale.com/install.sh | sudo sh
-          sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
+          TAG=$(curl -fsSL https://api.github.com/repos/ekzhang/bore/releases/latest \
+            | grep -m1 '"tag_name"' | cut -d'"' -f4)
+          echo ">>> Installing bore ${TAG}..."
+          curl -fsSL "https://github.com/ekzhang/bore/releases/download/${TAG}/bore-${TAG}-x86_64-unknown-linux-musl.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin bore
+          bore --version
 
-      - name: Show SSH Connection Info
+      - name: Start bore tunnel
         run: |
-          TAILSCALE_IP=$(tailscale ip -4 | head -n1)
+          setsid nohup bore local 22 --to bore.pub > /tmp/bore.log 2>&1 &
+          echo $! > /tmp/bore.pid
+
+          PORT=""
+          for i in $(seq 1 30); do
+            PORT=$(grep -oE 'bore\.pub:[0-9]+' /tmp/bore.log | head -n1 | cut -d: -f2 || true)
+            [ -n "${PORT}" ] && break
+            sleep 1
+          done
+
+          if [ -z "${PORT}" ]; then
+            echo "Failed to get a bore.pub port. Log:"
+            cat /tmp/bore.log
+            exit 1
+          fi
+
           echo "=== SSH CONNECTION INFO ==="
-          echo "IP: ${TAILSCALE_IP}"
+          echo "HOST: bore.pub"
+          echo "PORT: ${PORT}"
           echo "USERNAME: ${USERNAME}"
-          echo "PASSWORD: ${PASSWORD}"
           echo
           echo ">>> Connect with:"
-          echo "    ssh -o StrictHostKeyChecking=no ${USERNAME}@${TAILSCALE_IP}"
-          echo
-          echo ">>> Keeping runner alive..."
-          tail -f /dev/null
+          echo "    ssh -p ${PORT} -o StrictHostKeyChecking=no ${USERNAME}@bore.pub"
+
+      - name: Keep runner alive
+        run: |
+          echo ">>> Keeping runner alive while the tunnel is up..."
+          while kill -0 "$(cat /tmp/bore.pid)" 2>/dev/null; do
+            sleep 30
+          done
+          echo "bore tunnel exited:"
+          cat /tmp/bore.log

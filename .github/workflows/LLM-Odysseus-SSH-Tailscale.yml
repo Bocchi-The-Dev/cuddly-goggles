@@ -126,7 +126,7 @@ jobs:
           
           if [ "${{ inputs.install_odysseus }}" = "true" ]; then
             echo ">>> Odysseus WebUI Access:"
-            echo "    URL: http://${TAILSCALE_IP}:7000"
+            echo "    URL: http://${TAILSCALE_IP}:7011"
             echo "    Admin Password: ${ODYSSEUS_PWD}"
             echo
             echo "    (In Odysseus settings, set local model endpoint to: http://host.docker.internal:11434/v1)"

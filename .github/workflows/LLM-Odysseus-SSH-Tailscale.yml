@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   setup-llm-runner:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
       USERNAME: runner

@@ -65,15 +65,13 @@ jobs:
           echo ">>> Installing dependencies..."
           sudo apt update -y -qq
           sudo apt install curl wget -y -qq
-          
-          echo ">>> Installing Ollama..."
           curl -sSL https://ollama.com/install.sh | sh
-          
-          echo ">>> Configuring Ollama host binding (0.0.0.0)..."
-          sudo mkdir -p /etc/systemd/system/ollama.service.d
-          echo -e '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0"' | sudo tee /etc/systemd/system/ollama.service.d/override.conf > /dev/null
-          sudo systemctl daemon-reload
-          sudo systemctl restart ollama
+          pkill -f "ollama serve" || true
+          nohup env OLLAMA_HOST=0.0.0.0:11434 OLLAMA_KEEP_ALIVE=-1 \
+          ollama serve > /tmp/ollama.log 2>&1 &
+          for i in $(seq 1 30); do curl -s localhost:11434 >/dev/null && break; sleep 1; done
+          ollama pull "${MODEL}"
+
 
           echo ">>> Version Check:"
           ollama --version

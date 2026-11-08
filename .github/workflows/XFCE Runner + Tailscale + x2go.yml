@@ -40,7 +40,7 @@ jobs:
 
           # Set VNC password
           mkdir -p ~/.vnc
-          echo "${PASSWORD}" | kasmvncpasswd -u ${USERNAME} -w
+          kasmvncpasswd -u ${USERNAME} -w "${PASSWORD}"
 
           # Start server on display :1, bind to all interfaces, port 8444
           vncserver :1 \

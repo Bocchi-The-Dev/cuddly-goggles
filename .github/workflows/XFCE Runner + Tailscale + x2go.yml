@@ -1,4 +1,4 @@
-name: Setup XFCE Runner + Tailscale (x2go)
+name: Setup XFCE Runner + Tailscale
 
 on:
   workflow_dispatch:
@@ -8,13 +8,14 @@ permissions:
 
 jobs:
   setup-gui-runner:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 350
     env:
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      TAILSCALE_HOSTNAME: gh-xfce-${{ github.run_id }}
       USERNAME: runner
       PASSWORD: runner
-      TAILSCALE_HOSTNAME: gh-xfce-${{ github.run_id }}
+      KASMVNC_VERSION: 1.5.1
 
     steps:
       - uses: actions/checkout@v4
@@ -24,42 +25,40 @@ jobs:
           echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
           echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
 
-      - name: Install XFCE + x2go + SSH
+      - name: Install XFCE
         run: |
-          echo ">>> Installing XFCE + x2go stack..."
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-          xfce4 xorg dbus-x11 x2goserver x2goserver-xsession openssh-server xfce4-terminal
+            xfce4 xfce4-terminal dbus-x11
 
-          # x2go needs a real .xsession to know what DE to launch
-          echo "startxfce4" | sudo -u ${USERNAME} tee /home/${USERNAME}/.xsession
+      - name: Install KasmVNC
+        run: |
+          wget -q "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_resolute_${KASMVNC_VERSION}_amd64.deb" \
+            -O /tmp/kasmvnc.deb
+          sudo apt-get install -y /tmp/kasmvnc.deb
+          sudo adduser ${USERNAME} ssl-cert
 
-          # allow password auth over SSH (x2go client logs in this way)
-          sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-          sudo systemctl restart ssh
+          # Set VNC password
+          mkdir -p ~/.vnc
+          echo "${PASSWORD}" | kasmvncpasswd -u ${USERNAME} -w -r
 
-          # x2go's own service
-          sudo systemctl enable --now x2goserver || true
+          # Start server on display :1, bind to all interfaces, port 8444
+          vncserver :1 \
+            -select-de xfce \
+            -interface 0.0.0.0 \
+            -websocketPort 8444 \
+            -sslOnly 0
 
       - name: Install Tailscale
         run: |
-          echo ">>> Installing Tailscale..."
           curl -fsSL https://tailscale.com/install.sh | sudo sh
           sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
-          sudo tailscale ip -4
 
       - name: Connection Info + Keep Alive
         run: |
-          echo "=== FINAL CONNECTION INFO ==="
-          echo "Connect using the x2go client (not RDP!)"
-          echo "USERNAME: ${USERNAME}"
-          echo "PASSWORD: ${PASSWORD}"
-          echo "Tailscale hostname: ${TAILSCALE_HOSTNAME}"
-          echo "Tailscale IPs:"
-          sudo tailscale ip -4 || true
-          echo
-          echo ">>> In x2go client: Host = tailscale IP/hostname, Login = ${USERNAME}, Session type = XFCE, SSH port = 22"
+          echo "=== CONNECTION INFO ==="
+          echo "Open in browser: http://$(sudo tailscale ip -4):8444"
+          echo "Username: ${USERNAME}"
+          echo "Password: ${PASSWORD}"
           echo ">>> Keeping runner alive..."
-          while true; do
-            sleep 600
-          done
+          while true; do sleep 600; done

@@ -33,14 +33,14 @@ jobs:
 
       - name: Install KasmVNC
         run: |
-          wget -q "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_resolute_${KASMVNC_VERSION}_amd64.deb" \
-            -O /tmp/kasmvnc.deb
+          wget -q "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_ubuntu_resolute_${KASMVNC_VERSION}_amd64.deb" \
+          -O /tmp/kasmvnc.deb
           sudo apt-get install -y /tmp/kasmvnc.deb
           sudo adduser ${USERNAME} ssl-cert
 
           # Set VNC password
           mkdir -p ~/.vnc
-          echo "${PASSWORD}" | kasmvncpasswd -u ${USERNAME} -w -r
+          echo "${PASSWORD}" | kasmvncpasswd -u ${USERNAME} -w
 
           # Start server on display :1, bind to all interfaces, port 8444
           vncserver :1 \

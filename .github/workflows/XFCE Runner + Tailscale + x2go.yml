@@ -20,9 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Ensure runner user has sudo + password auth
+      - name: Ensure sudo
         run: |
-          echo "${USERNAME}:${PASSWORD}" | sudo chpasswd
           echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/${USERNAME}
 
       - name: Install XFCE
@@ -31,34 +30,34 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             xfce4 xfce4-terminal dbus-x11
 
-      - name: Install KasmVNC
-        run: |
-          wget -q "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_ubuntu_resolute_${KASMVNC_VERSION}_amd64.deb" \
-          -O /tmp/kasmvnc.deb
-          sudo apt-get install -y /tmp/kasmvnc.deb
-          sudo adduser ${USERNAME} ssl-cert
-
-          # Set VNC password
-          mkdir -p ~/.vnc
-          kasmvncpasswd -u ${USERNAME} -w "${PASSWORD}"
-
-          # Start server on display :1, bind to all interfaces, port 8444
-          vncserver :1 \
-            -select-de xfce \
-            -interface 0.0.0.0 \
-            -websocketPort 8444 \
-            -sslOnly 0
-
       - name: Install Tailscale
         run: |
           curl -fsSL https://tailscale.com/install.sh | sudo sh
           sudo tailscale up --authkey "${TAILSCALE_AUTHKEY}" --hostname "${TAILSCALE_HOSTNAME}"
 
-      - name: Connection Info + Keep Alive
+      - name: Install and start KasmVNC
+        run: |
+          wget -q "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_ubuntu_resolute_${KASMVNC_VERSION}_amd64.deb" \
+            -O /tmp/kasmvnc.deb
+          sudo apt-get install -y /tmp/kasmvnc.deb
+          sudo usermod -aG ssl-cert "${USERNAME}"
+
+          mkdir -p ~/.vnc
+          printf '%s\n%s\n' "${PASSWORD}" "${PASSWORD}" | kasmvncpasswd -u "${USERNAME}" -w
+          echo "exec startxfce4" > ~/.vnc/xstartup
+          chmod +x ~/.vnc/xstartup
+
+          TS_IP=$(tailscale ip -4)
+          sg ssl-cert -c "vncserver :1 \
+            -select-de xfce \
+            -interface ${TS_IP} \
+            -websocketPort 8444 \
+            -sslOnly 0"
+
+      - name: Connection info + keep alive
         run: |
           echo "=== CONNECTION INFO ==="
-          echo "Open in browser: http://$(sudo tailscale ip -4):8444"
+          echo "Open in browser: http://$(tailscale ip -4):8444"
           echo "Username: ${USERNAME}"
           echo "Password: ${PASSWORD}"
-          echo ">>> Keeping runner alive..."
           while true; do sleep 600; done
